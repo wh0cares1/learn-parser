@@ -25,7 +25,18 @@ class Parser {
    * Parses a string into an AST.
    */
   parse(string) {
-    // Implement here...
+    this._string = string;
+    this._tokenizer.init(string);
+
+    // Prime the tokenizer to obtain the first
+    // token which is our lookahead. The lookahead is
+    // used for predictive parsing
+
+    this._lookahead = this._tokenizer.getNextToken();
+
+    // Parse recursively starting from the main
+    // entry point, the Program:
+    return this.Program();
   }
 
   /**
@@ -36,7 +47,10 @@ class Parser {
    *   ;
    */
   Program() {
-    // Implement here...
+    return {
+      type: 'Program',
+      body: this.StatementList(),
+    };
   }
 
   /**
@@ -46,7 +60,11 @@ class Parser {
    *   ;
    */
   StatementList(stopLookahead = null) {
-    // Implement here...
+    const statementList = [this.Statement()];
+    while (this._lookahead != null && this._lookahead.type !== stopLookahead){
+      statementList.push(this.Statement());
+    }
+    return statementList;
   }
 
   /**
@@ -65,7 +83,18 @@ class Parser {
    *   ;
    */
   Statement() {
-    // Implement here...
+    switch (this._lookahead.type){
+      case ';':
+        return this.EmptyStatement();
+      case 'if':
+        return this.IfStatement();
+      case '{': 
+        return this.BlockStatement();
+      case 'let': 
+        return this.VariableStatement();
+      default:
+        return this.ExpressionStatement();
+    }
   }
 
   /**
@@ -207,7 +236,24 @@ class Parser {
    *   ;
    */
   IfStatement() {
-    // Implement here...
+    this._eat('if');
+    this._eat('(');
+    const test = this.Expression();
+    this._eat(')');
+
+    const consequent = this.Statement();
+
+    const alternate =
+      this._lookahead != null && this._lookahead.type === 'else'
+        ? this._eat('else') && this.Statement()
+        : null;
+
+    return {
+      type: 'IfStatement',
+      test,
+      consequent,
+      alternate,
+    };
   }
 
   /**
@@ -225,9 +271,13 @@ class Parser {
    *   ;
    */
   VariableStatement() {
-    const variableStatement = this.VariableStatementInit();
+    this._eat('let');
+    const declarations = this.VariableDeclarationList();
     this._eat(';');
-    return variableStatement;
+    return {
+      type: 'VariableStatement',
+      declarations,
+    };
   }
 
   /**
@@ -237,7 +287,12 @@ class Parser {
    *   ;
    */
   VariableDeclarationList() {
-    // Implement here...
+    const declarations = [];
+
+    do{
+      declarations.push(this.VariableDeclaration());
+    } while (this._lookahead.type === ',' && this._eat(','));
+    return declarations;
   }
 
   /**
@@ -246,7 +301,18 @@ class Parser {
    *   ;
    */
   VariableDeclaration() {
-    // Implement here...
+    const id = this.Identifier();
+
+    // OptVariableInitializer
+    const init =
+      this._lookahead.type !== ';' && this._lookahead.type !== ','
+        ? this.VariableInitializer()
+        : null;
+    return {
+      type: 'VariableDeclaration',
+      id,
+      init,
+    };
   }
 
   /**
@@ -277,7 +343,14 @@ class Parser {
    *   ;
    */
   BlockStatement() {
-    // Implement here...
+    this._eat('{');
+    const body = this._lookahead.type !== '}' ? this.StatementList('}') : [];
+
+    this._eat('}');
+    return {
+      type: 'BlockStatement',
+      body,
+    };
   }
 
   /**
@@ -286,7 +359,12 @@ class Parser {
    *   ;
    */
   ExpressionStatement() {
-    // Implement here...
+    const expression = this.Expression();
+    this._eat(';');
+    return {
+      type: 'ExpressionStatement',
+      expression,
+    };
   }
 
   /**
@@ -305,7 +383,18 @@ class Parser {
    *   ;
    */
   AssignmentExpression() {
-    // Implement here...
+    const left = this.LogicalORExpression();
+
+    if (!this._isAssignmentOperator(this._lookahead.type)){
+      return left;
+    }
+    
+    return {
+      type: 'AssignmentExpression',
+      operator: this.AssignmentOperator().value,
+      left: this._checkValidAssignmentTarget(left),
+      right: this.AssignmentExpression(),
+    };
   }
 
   /**
@@ -362,7 +451,7 @@ class Parser {
    *   ;
    */
   LogicalORExpression() {
-    // Implement here...
+    return this._LogicalExpression('LogicalANDExpression', 'LOGICAL_OR');
   }
 
   /**
@@ -376,7 +465,7 @@ class Parser {
    *   ;
    */
   LogicalANDExpression() {
-    // Implement here...
+    return this._LogicalExpression('EqualityExpression', 'LOGICAL_AND');
   }
 
   /**
@@ -391,7 +480,7 @@ class Parser {
    *   ;
    */
   EqualityExpression() {
-    // Implement here...
+    return this._BinaryExpression('RelationalExpression', 'EQUALITY_OPERATOR');
   }
 
   /**
@@ -408,7 +497,7 @@ class Parser {
    *   ;
    */
   RelationalExpression() {
-    // Implement here...
+    return this._BinaryExpression('AdditiveExpression', 'RELATIONAL_OPERATOR');
   }
 
   /**
@@ -418,7 +507,10 @@ class Parser {
    *   ;
    */
   AdditiveExpression() {
-    // Implement here...
+    return this._BinaryExpression(
+      'MultiplicativeExpression', 
+      'ADDITIVE_OPERATOR',
+    );
   }
 
   /**
@@ -428,14 +520,30 @@ class Parser {
    *   ;
    */
   MultiplicativeExpression() {
-    // Implement here...
+    return this._BinaryExpression(
+      'PrimaryExpression', 
+      'MULTIPLICATIVE_OPERATOR',
+    );
   }
 
   /**
    * Generic helper for LogicalExpression nodes.
    */
   _LogicalExpression(builderName, operatorToken) {
-    // Implement here...
+    let left = this[builderName]();
+
+    while (this._lookahead.type === operatorToken){
+      const operator = this._eat(operatorToken).value;
+      const right = this[builderName]();
+      left = {
+        type: 'LogicalExpression',
+        operator,
+        left,
+        right,
+      };
+    }
+
+    return left;
   }
 
   /**
@@ -547,7 +655,15 @@ class Parser {
    *   ;
    */
   PrimaryExpression() {
-    // Implement here...
+    if (this._isLiteral(this._lookahead.type)){
+      return this.Literal();
+    }
+    switch (this._lookahead.type){
+      case '(':
+        return this.ParenthesizedExpression();
+      default:
+        return this.Literal();
+    }
   }
 
   /**
@@ -584,7 +700,13 @@ class Parser {
    * Whether the token is a literal.
    */
   _isLiteral(tokenType) {
-    // Implement here...
+    return (
+      tokenType === 'NUMBER' ||
+      tokenType === 'STRING' ||
+      tokenType === 'true' ||
+      tokenType === 'false' ||
+      tokenType === 'null'
+    );
   }
 
   /**
@@ -593,7 +715,10 @@ class Parser {
    *   ;
    */
   ParenthesizedExpression() {
-    // Implement here...
+    this._eat('(');
+    const expression = this.Expression();
+    this._eat(')');
+    return expression;
   }
 
   /**
@@ -605,7 +730,19 @@ class Parser {
    *   ;
    */
   Literal() {
-    // Implement here...
+    switch (this._lookahead.type){
+      case 'NUMBER':
+        return this.NumericLiteral();
+      case 'STRING':
+        return this.StringLiteral();
+      case 'true' :
+        return this.BooleanLiteral(true);
+      case 'false' :
+        return this.BooleanLiteral(false);
+      case 'null' :
+        return this.NullLiteral(true);
+    }
+    throw new SyntaxError(`Literal: unexpected literal production`);
   }
 
   /**
@@ -628,7 +765,11 @@ class Parser {
    *   ;
    */
   NullLiteral() {
-    // Implement here...
+    this._eat('null');
+    return {
+      type: 'NullLiteral',
+      value: null,
+    };
   }
 
   /**
@@ -661,7 +802,24 @@ class Parser {
    * Expects a token of a given type.
    */
   _eat(tokenType) {
-    // Implement here...
+    const token = this._lookahead;
+
+    if (token == null){
+      throw new SyntaxError(
+        `Unexpected end of input, expected: "${tokenType}"`,
+      );
+    }
+
+    if (token.type !== tokenType){
+      throw new SyntaxError(
+        `Unexpected token: "${token.value}", expected: "${tokenType}"`,
+      );
+    }
+
+    // Advance to next token
+    this._lookahead = this._tokenizer.getNextToken();
+
+    return token;
   }
 }
 
