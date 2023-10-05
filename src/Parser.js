@@ -92,6 +92,16 @@ class Parser {
         return this.BlockStatement();
       case 'let': 
         return this.VariableStatement();
+      case 'def':
+        return this.FunctionDeclaration();
+      case 'class':
+        return this.ClassDeclaration();
+      case 'return':
+        return this.ReturnStatement();
+      case 'while':
+      case 'do':
+      case 'for':
+        return this.IterationStatement();
       default:
         return this.ExpressionStatement();
     }
@@ -103,7 +113,18 @@ class Parser {
    *   ;
    */
   ClassDeclaration() {
-    // Implement here...
+    this._eat('class');
+    const id = this.Identifier();
+
+    const superClass = this._lookahead.type === 'extends' ? this.ClassExtends() : null;
+
+    const body = this.BlockStatement();
+    return {
+      type: 'ClassDeclaration',
+      id,
+      superClass,
+      body,
+    };
   }
 
   /**
@@ -112,7 +133,8 @@ class Parser {
    *   ;
    */
   ClassExtends() {
-    // Implement here...
+    this._eat('extends');
+    return this.Identifier();
   }
 
   /**
@@ -121,7 +143,24 @@ class Parser {
    *   ;
    */
   FunctionDeclaration() {
-    // Implement here...
+    this._eat('def');
+    const name = this. Identifier();
+
+    this._eat('(');
+
+    // OptFormalParameterList
+    const params = this._lookahead.type !== ')' ? this.FormalParameterList() : [];
+
+    this._eat(')');
+
+    const body = this.BlockStatement();
+
+    return {
+      type: 'FunctionDeclaration',
+      name,
+      params,
+      body,
+    };
   }
 
   /**
@@ -146,7 +185,13 @@ class Parser {
    *   ;
    */
   ReturnStatement() {
-    // Implement here...
+    this._eat('return');
+    const argument = this._lookahead.type !== ';' ? this.Expression() : null;
+    this._eat(';');
+    return {
+      type: 'ReturnStatement',
+      argument,
+    };
   }
 
   /**
@@ -173,7 +218,18 @@ class Parser {
    *  ;
    */
   WhileStatement() {
-    // Implement here...
+    this._eat('while');
+    this._eat('(');
+    const test = this.Expression();
+    this._eat(')');
+
+    const body = this.Statement();
+
+    return {
+      type: 'WhileStatement',
+      test,
+      body,
+    };
   }
 
   /**
@@ -181,7 +237,20 @@ class Parser {
    *   : 'do' Statement 'while' '(' Expression ')' ';'
    */
   DoWhileStatement() {
-    // Implement here...
+    this._eat('do');
+    const body = this.Statement();
+    this._eat('while');
+
+    this._eat('(');
+    const test = this.Expression();
+    this._eat(')');
+    this._eat(';');
+    
+    return {
+      type: 'DoWhileStatement',
+      body,
+      test,
+    };
   }
 
   /**
@@ -190,7 +259,26 @@ class Parser {
    *   ;
    */
   ForStatement() {
-    // Implement here...
+    this._eat('for');
+    this._eat('(');
+
+    const init = this._lookahead.type !== ';' ? this.ForStatementInit() : null;
+    this._eat(';');
+
+    const test = this._lookahead.type !== ';' ? this.Expression() : null;
+    this._eat(';');
+
+    const update = this._lookahead.type !== ')' ? this.Expression() : null;
+    this._eat(')');
+
+    const body = this.Statement();
+    return {
+      type: 'ForStatement',
+      init,
+      test,
+      update,
+      body,
+    };
   }
 
   /**
@@ -200,7 +288,10 @@ class Parser {
    *   ;
    */
   ForStatementInit() {
-    // Implement here...
+    if (this._lookahead.type === 'let'){
+      return this.VariableStatementInit();
+    }
+    return this.Expression();
   }
 
   /**
@@ -262,7 +353,12 @@ class Parser {
    *   ;
    */
   VariableStatementInit() {
-    // Implement here...
+    this._eat('let');
+    const declarations = this.VariableDeclarationList();
+    return {
+      type: 'VariableStatement',
+      declarations,
+    };
   }
 
   /**
@@ -271,13 +367,9 @@ class Parser {
    *   ;
    */
   VariableStatement() {
-    this._eat('let');
-    const declarations = this.VariableDeclarationList();
+    const variableStatement = this.VariableStatementInit();
     this._eat(';');
-    return {
-      type: 'VariableStatement',
-      declarations,
-    };
+    return variableStatement;
   }
 
   /**
@@ -521,7 +613,7 @@ class Parser {
    */
   MultiplicativeExpression() {
     return this._BinaryExpression(
-      'PrimaryExpression', 
+      'UnaryExpression', 
       'MULTIPLICATIVE_OPERATOR',
     );
   }
@@ -576,7 +668,23 @@ class Parser {
    *   ;
    */
   UnaryExpression() {
-    // Implement here...
+    let operator;
+    switch (this._lookahead.type){
+      case 'ADDITIVE_OPERATOR':
+        operator = this._eat('ADDITIVE_OPERATOR').value;
+        break;
+      case 'LOGICAL_NOT':
+        operator = this._eat('LOGICAL_NOT').value;
+        break;
+    }
+    if (operator != null){
+      return {
+        type: 'UnaryExpression',
+        operator,
+        argument: this.UnaryExpression(),
+      };
+    }
+    return this.LeftHandSideExpression();
   }
 
   /**
@@ -595,7 +703,21 @@ class Parser {
    *   ;
    */
   CallMemberExpression() {
-    // Implement here...
+    // Super call
+    if (this._lookahead.type === 'super'){
+      return this._CallExpression(this.Super());
+    }
+
+    // Member part, might be part of a call
+    const member = this.MemberExpression();
+
+    // See if we have a call expression
+    if (this._lookahead.type === '('){
+      return this._CallExpression(member);
+    }
+
+    // Simple member expression
+    return member;
   }
 
   /**
@@ -612,7 +734,15 @@ class Parser {
    *   ;
    */
   _CallExpression(callee) {
-    // Implement here...
+    let callExpression = {
+      type: 'CallExpression',
+      callee,
+      arguments: this.Arguments(),
+    };
+    if (this._lookahead.type === '('){
+      callExpression = this._CallExpression(callExpression);
+    }
+    return callExpression;
   }
 
   /**
@@ -621,7 +751,12 @@ class Parser {
    *   ;
    */
   Arguments() {
-    // Implement here...
+    this._eat('(');
+
+    const argumentList = this._lookahead.type !== ')' ? this.ArgumentList() : [];
+
+    this._eat(')');
+    return argumentList;
   }
 
   /**
@@ -631,7 +766,13 @@ class Parser {
    *   ;
    */
   ArgumentList() {
-    // Implement here...
+    const argumentList = [];
+
+    do {
+      argumentList.push(this.AssignmentExpression());
+    } while (this._lookahead.type === ',' && this._eat(','));
+
+    return argumentList;
   }
 
   /**
@@ -642,7 +783,34 @@ class Parser {
    *   ;
    */
   MemberExpression() {
-    // Implement here...
+    let object = this.PrimaryExpression();
+    while (this._lookahead.type === '.' || this._lookahead.type === '['){
+      // MemberExpression '.' Identifier
+      if (this._lookahead.type === '.'){
+        this._eat('.');
+        const property = this.Identifier();
+        object = {
+          type: 'MemberExpression',
+          computed: false,
+          object,
+          property,
+        };
+      }
+
+      // MemberExpression '[' Expression ']'
+      if (this._lookahead.type === '['){
+        this._eat('[');
+        const property = this.Expression();
+        this._eat(']');
+        object = {
+          type: 'MemberExpression',
+          computed: true,
+          object,
+          property,
+        };
+      }
+    }
+    return object;
   }
 
   /**
@@ -661,8 +829,14 @@ class Parser {
     switch (this._lookahead.type){
       case '(':
         return this.ParenthesizedExpression();
+      case 'IDENTIFIER':
+        return this.Identifier();
+      case 'this':
+        return this.ThisExpression();
+      case 'new':
+        return this.NewExpression();
       default:
-        return this.Literal();
+        return this.LeftHandSideExpression();
     }
   }
 
@@ -672,7 +846,12 @@ class Parser {
    *   ;
    */
   NewExpression() {
-    // Implement here...
+    this._eat('new');
+    return {
+      type: 'NewExpression',
+      callee: this.MemberExpression(),
+      arguments: this.Arguments(),
+    };
   }
 
   /**
@@ -693,7 +872,10 @@ class Parser {
    *   ;
    */
   Super() {
-    // Implement here...
+    this._eat('super');
+    return {
+      type: 'Super',
+    };
   }
 
   /**

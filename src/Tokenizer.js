@@ -26,6 +26,9 @@ const Spec = [
   [/^\(/, '('],
   [/^\)/, ')'],
   [/^,/, ','],
+  [/^\./, '.'],
+  [/^\[/, '['],
+  [/^\]/, ']'],
 
   // Keywords:
   [/^\blet\b/, 'let'],
@@ -34,6 +37,16 @@ const Spec = [
   [/^\btrue\b/, 'true'],
   [/^\bfalse\b/, 'false'],
   [/^\bnull\b/, 'null'],
+  [/^\bwhile\b/, 'while'],
+  [/^\bdo\b/, 'do'],
+  [/^\bfor\b/, 'for'],
+  [/^\bdef\b/, 'def'],
+  [/^\breturn\b/, 'return'],
+  [/^\bclass\b/, 'class'],
+  [/^\bextends\b/, 'extends'],
+  [/^\bsuper\b/, 'super'],
+  [/^\bnew\b/, 'new'],
+  [/^\bthis\b/, 'this'],
 
   // Numbers:
   [/^\d+/, 'NUMBER'],
@@ -58,6 +71,7 @@ const Spec = [
   // Logical operators
   [/^&&/, 'LOGICAL_AND'],
   [/^\|\|/, 'LOGICAL_OR'],
+  [/^!/, 'LOGICAL_NOT'],
   
   // Strings:
   [/^"[^"]*"/, 'STRING'],
